@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DINO Study Pro | Residentado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --accent: #3b82f6; --card: #1e293b; --border: #334155; }
+        body { background-color: #0f172a; color: white; font-family: 'Inter', sans-serif; }
+        .card { background-color: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; transition: all 0.3s ease; }
+        .option-btn { text-align: left; padding: 1rem; border-radius: 12px; border: 1px solid var(--border); width: 100%; transition: 0.2s; font-size: 1rem; }
+        .option-btn:hover { border-color: var(--accent); background: #1e293b; }
+        .correct-choice { border-color: #10b981 !important; background-color: #064e3b !important; }
+        .wrong-choice { border-color: #ef4444 !important; background-color: #7f1d1d !important; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-10 px-4">
+    <div class="w-full max-w-2xl">
+        <div class="flex justify-between items-center mb-8 bg-slate-800/50 p-4 rounded-2xl">
+            <div>
+                <h1 class="text-xl font-bold text-blue-400">DINO STUDY <span class="text-xs text-slate-500 italic">PRO</span></h1>
+                <p id="topic-label" class="text-xs text-slate-400 uppercase tracking-widest">Selecciona un modo</p>
+            </div>
+            <div id="timer-container" class="hidden text-xl font-mono text-blue-400 font-bold">00:00</div>
+            <div id="score-board" class="text-right text-xs">
+                <p class="text-slate-500 uppercase">Progreso</p>
+                <p class="font-bold text-sm"><span id="curr-idx">0</span> / <span id="total-idx">0</span></p>
+            </div>
+        </div>
+
+        <!-- Selector de Modos -->
+        <div id="mode-selector" class="grid grid-cols-1 gap-4">
+            <button onclick="startMode('study')" class="card hover:border-blue-500 group flex items-center gap-6">
+                <div class="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center text-2xl">📖</div>
+                <div class="text-left">
+                    <h2 class="text-lg font-bold">Modo Flashcard</h2>
+                    <p class="text-sm text-slate-400">Repaso rápido: Pregunta → Ver Respuesta.</p>
+                </div>
+            </button>
+            <button onclick="startMode('exam')" class="card hover:border-blue-500 group flex items-items-center gap-6">
+                <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center text-2xl">⏱️</div>
+                <div class="text-left">
+                    <h2 class="text-lg font-bold">Modo Examen</h2>
+                    <p class="text-sm text-slate-400">Simulacro con tiempo. Sin ayudas.</p>
+                </div>
+            </button>
+            <button onclick="showCategoryMenu()" class="card hover:border-blue-500 group flex items-center gap-6">
+                <div class="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center text-2xl">📂</div>
+                <div class="text-left">
+                    <h2 class="text-lg font-bold">Filtrar Temas</h2>
+                    <p class="text-sm text-slate-400">Selecciona una especialidad.</p>
+                </div>
+            </button>
+        </div>
+
+        <!-- Selector de Categorías -->
+        <div id="category-menu" class="hidden space-y-4">
+            <p class="text-center text-slate-400 mb-4 font-medium">Elegir especialidad:</p>
+            <div id="category-list" class="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2"></div>
+            <button onclick="backToMenu()" class="w-full text-slate-500 text-sm hover:text-white">Volver</button>
+        </div>
+
+        <!-- Quiz -->
+        <div id="quiz-container" class="hidden space-y-6">
+            <div id="question-card" class="card text-lg leading-relaxed">
+                <p id="question-text" class="font-medium"></p>
+            </div>
+            <div id="options-grid" class="grid grid-cols-1 gap-3"></div>
+            <div id="explanation-card" class="hidden card bg-slate-900/50 border-blue-500/50 border-l-4">
+                <h3 class="text-blue-400 font-bold text-sm uppercase mb-2">Explicación Clínica</h3>
+                <p id="explanation-text" class="text-slate-300 text-sm leading-relaxed"></p>
+                <button id="btn-next" class="mt-6 w-full bg-blue-600 py-3 rounded-lg font-bold hover:bg-blue-500">Siguiente Pregunta</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let questions = [];
+        let filteredQuestions = [];
+        let currentIndex = 0;
+        let currentMode = '';
+        let timerInterval;
+        let startTime;
+
+        async function loadAllData() {{
+            try {{
+                const res = await fetch('EXAMEN_APP_DATA.json');
+                questions = await res.json();
+                document.getElementById('total-idx').innerText = questions.length;
+            }} catch (e) {{ console.error("Error", e); }}
+        }}
+
+        function startMode(mode) {{
+            currentMode = mode;
+            currentIndex = 0;
+            filteredQuestions = [...questions];
+            document.getElementById('mode-selector').classList.add('hidden');
+            document.getElementById('quiz-container').classList.remove('hidden');
+            if(mode === 'exam') {{
+                document.getElementById('timer-container').classList.remove('hidden');
+                startTimer();
+            }} else {{
+                document.getElementById('topic-label').innerText = "Modo Repaso";
+            }}
+            renderQuestion();
+        }}
+
+        function startTimer() {{
+            startTime = Date.now();
+            timerInterval = setInterval(() => {{
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const secs = (elapsed % 60).toString().padStart(2, '0');
+                document.getElementById('timer-container').innerText = mins + ':' + secs;
+            }}, 1000);
+        }}
+
+        function renderQuestion() {{
+            const q = filteredQuestions[currentIndex];
+            document.getElementById('curr-idx').innerText = currentIndex + 1;
+            document.getElementById('question-text').innerText = q.question_text;
+            document.getElementById('explanation-card').classList.add('hidden');
+            document.getElementById('btn-next').innerText = "Siguiente Pregunta";
+
+            const grid = document.getElementById('options-grid');
+            grid.innerHTML = '';
+            Object.entries(q.options).forEach(([key, text]) => {{
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.innerHTML = `<span class="font-bold text-blue-400 mr-2">${{key.toUpperCase()}}).</span> ${{text}}`;
+                btn.onclick = () => checkAnswer(key, q.correct_answer, btn);
+                grid.appendChild(btn);
+            }});
+        }}
+
+        function checkAnswer(selected, correct, btn) {{
+            const isCorrect = selected.toLowerCase() === correct.toLowerCase();
+            if(currentMode === 'exam') document.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
+            
+            if(isCorrect) {{
+                btn.classList.add('correct-choice');
+            }} else {{
+                btn.classList.add('wrong-choice');
+                Array.from(document.querySelectorAll('.option-btn')).forEach(b => {{
+                    if(b.innerText.startsWith(correct.toUpperCase() + '.')) b.classList.add('correct-choice');
+                }});
+            }}
+            document.getElementById('explanation-text').innerText = filteredQuestions[currentIndex].explanation;
+            document.getElementById('explanation-card').classList.remove('hidden');
+            document.getElementById('btn-next').onclick = () => {{
+                currentIndex++;
+                if(currentIndex < filteredQuestions.length) renderQuestion();
+                else location.reload();
+            }};
+        }}
+
+        function showCategoryMenu() {{
+            const container = document.getElementById('category-list');
+            container.innerHTML = '';
+            const categories = ["Cardiología", "Hematología", "Gastroenterología", "Pediatría", "Dermatología", "Farmacología"];
+            categories.forEach(cat => {{
+                const btn = document.createElement('button');
+                btn.className = "bg-slate-700 p-3 rounded-lg hover:bg-blue-600 text-sm text-left px-4";
+                btn.innerText = cat;
+                btn.onclick = () => {{
+                    filteredQuestions = questions.filter(q => q.source.toLowerCase().includes(cat.toLowerCase()));
+                    if(filteredQuestions.length > 0) {{
+                        document.getElementById('mode-selector').classList.add('hidden');
+                        document.getElementById('category-menu').classList.add('hidden');
+                        document.getElementById('quiz-container').classList.remove('hidden');
+                        currentIndex = 0;
+                        document.getElementById('topic-label').innerText = cat;
+                        renderQuestion();
+                    }} else {{
+                        alert("Sin preguntas para este tema.");
+                    }}
+                }};
+                container.appendChild(btn);
+            }});
+            document.getElementById('mode-selector').classList.add('hidden');
+            document.getElementById('category-menu').classList.remove('hidden');
+        }}
+
+        function backToMenu() {{
+            document.getElementById('category-menu').classList.add('hidden');
+            document.getElementById('mode-selector').classList.remove('hidden');
+            document.getElementById('quiz-container').classList.add('hidden');
+        }}
+
+        loadAllData();
+    </script>
+</body>
+</html>
